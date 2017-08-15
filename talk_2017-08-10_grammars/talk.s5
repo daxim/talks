@@ -1,0 +1,758 @@
+parsing with grammars shoot-out
+===============================
+
+Lars Dɪᴇᴄᴋᴏᴡ 迪拉斯
+
+<daxim@cpan.org>
+
+<http://vienna.pm.org/>
+
+<https://github.com/daxim>
+
+<https://www.google.com/profiles/108247278178090416113>
+
+----
+
+comparison of ANTLR, Eyapp, hammer, Marpa, Pegex, Perl 6 and Regexp::Grammars
+==============================================================================
+
+my criteria are subjective, but hopefully useful for you, too
+
+----
+
+criteria
+========
+
+Is it easy to get results quickly?
+----------------------------------
+
+* copy-paste from the synopsis, looking at the tests
+* many choices of parsing libraries, evaluating takes effort and time
+* problems? solve them with the public documentation
+* need to know how to express: epsilon, empty production, empty string
+* shows up in most grammars
+
+----
+
+criteria
+========
+
+Is the parsing library useful in the general case? If not, how does it deal with limitations?
+---------------------------------------------------------------------------------------------
+
+* two basic expectations
+    1. parsing must succeed with the correct input
+    2. I get some sort of parse tree back where the nodes are annotated
+
+* instead of the arithmetic op. example, a much simpler grammar with only three rules (later slide)
+* parsing libraries usually have much more advanced features than that, but I don't need them 
+(yet)
+* parse does not succeed? need to know why
+
+----
+
+criteria
+========
+
+Can I use a standard grammar as input?
+--------------------------------------
+
+* standard means published by a standards body, e.g. ISO EBNF or IETF ABNF
+* existing large published corpus
+* Internet RFCs are full of ABNF
+* reusing grammars is as simple as concatenation
+
+none of the libraries use standard grammars
+-------------------------------------------
+
+* some are justified
+* their own special BNF have features that are not found in standard BNF
+
+----
+
+candidates overview
+===================
+
+* relevant to Perl programmers
+* software versions: whatever is current as of 2017-07
+
+Antlr4: Java, previously had Perl bindings
+
+Eyapp: pure-perl
+
+hammer: C library/SWIG
+
+Marpa: C library/XS
+
+Pegex: pure-perl
+
+Perl6: not a library, but a language feature
+
+Regexp::Grammars: built on top of advanced features of the regex engine
+
+----
+
+our three-rule grammar: "flail"
+===============================
+
+    A = "" / "x" "z"
+    B = A "x" "y" / C
+    C = C "w" / "v"
+
+info for the experts: valid CFG, contains no cycles and is null unambiguous, all nonterminals reachable and realisable
+
+* simple, but effective at distinguishing the chaff from the wheat
+* some libraries fail, others have no problems at all
+
+----
+
+ANTLR v4
+========
+
+Flail.g4
+
+    grammar Flail;
+    B : A 'x' 'y' | C ;
+    A : /* */ | 'x' 'z' ;
+    C : C 'w' | 'v' ;
+    WS : [ \t\r\n]+ -> skip ;
+
+generate parser
+
+    java -Xmx500M org.antlr.v4.Tool -Dlanguage=JavaScript Flail.g4
+
+minimal client code is quite complicated
+
+    'use strict';
+    const antlr4 = require('antlr4');
+    const FlailLexer = require('./FlailLexer');
+    const FlailParser = require('./FlailParser');
+    const input = process.argv[2];
+    const chars = new antlr4.InputStream(input);
+    const lexer = new FlailLexer.FlailLexer(chars);
+    const tokens = new antlr4.CommonTokenStream(lexer);
+    const parser = new FlailParser.FlailParser(tokens);
+    parser.buildParseTrees = true;
+    const tree = parser.r();
+    // console.log({
+    //     antlr4, FlailLexer, FlailParser, chars, lexer, tokens, parser, tree
+    // });
+    console.log({tree});
+
+tooling has a good out-of-the-box experience, command-line test tool and visualisation gui
+
+    $ java -Xmx500M org.antlr.v4.Tool Hello.g4
+    $ javac *.java
+    $ echo -n 'hello you' | java org.antlr.v4.gui.TestRig Hello r -tree
+    (r hello you)
+
+    $ echo -n 'hello world' | java org.antlr.v4.gui.TestRig Hello r -gui
+
+![](gui.gif)
+
+----
+
+ANTLR v4
+========
+
+bold marketing claim: "ANTLR v4 takes whatever you give it--it just doesn't give a crap!"
+
+----
+
+ANTLR v4
+========
+
+bold marketing claim: "ANTLR v4 takes whatever you give it--it just doesn't give a crap!"
+
+yet:
+
+    error(119): Flail.g4::: The following sets of rules are mutually left-recursive [C]
+    error(99): Flail.g4::: grammar Flail has no rules
+
+⚑
+
+----
+
+Eyapp
+=====
+
+* documentation is overwhelming and copious, IMO a good problem to have
+* workflow reminiscent of the classic C parsing toolkits
+
+you write a grammar in a file
+
+        %strict
+        %tree
+
+        %%
+        start: B;
+        B: A 'x' 'y' | C;
+        A: '' | 'x' 'z';
+        C: C 'w' | 'v';
+        %%
+
+then translate it into code
+
+    eyapp -C flail.eyapp
+
+the result is a modulino, it works both as a library or from the command-line
+
+by default, you get no output, you have to capture it from each rule yourself
+
+    %strict
+    %tree
+
+    %%
+    start: B        { use DDS; shift; print Dump @_ };
+    B:
+        A 'x' 'y'   { shift; bless \@_, 'B1' } |
+        C           { shift; bless \@_, 'B2' };
+    A:
+        ''          { shift; bless \@_, 'A1' } |
+        'x' 'z'     { shift; bless \@_, 'A2' };
+    C:
+        C 'w'       { shift; bless \@_, 'C1' } |
+        'v'         { shift; bless \@_, 'C2' };
+    %%
+
+examples:
+
+    ./flail.pm -c 'x z x y'
+    bless([
+        bless(['x', 'z'], 'A2'),
+        'x', 'y'
+    ], 'B1')
+
+    ./flail.pm -c 'v w w w w w w'
+    bless([
+        bless([
+            bless([
+                bless([
+                    bless([
+                        bless([
+                            bless([
+                                bless([ 'v' ], 'C2' ),
+                                'w'
+                            ], 'C1'),
+                            'w'
+                        ], 'C1'),
+                        'w'
+                    ], 'C1'),
+                    'w'
+                ], 'C1'),
+                'w'
+            ], 'C1'),
+            'w'
+        ], 'C1')
+    ], 'B2')
+
+error message is great:
+
+    Syntax error near 'invalid'.
+    Expected one of these terminals: 'v' 'end of input' 'x'
+
+debugging:
+
+* there's a tutorial that shows you how to enter debug mode
+* the state machine can be dumped into human readable form into a file for inspection
+
+----
+
+hammer
+======
+
+<https://github.com/UpstandingHackers/hammer>
+
+* packaging is unperlish, difficult to install
+* interface very tedious to use
+* no special syntax, just lots of verbose functions
+
+example rule
+
+    B = A "x" "y" / C
+
+translates into
+
+    sub ruleB {
+        hammer::action(
+            hammer::choice(
+                hammer::sequence(
+                    ruleA,
+                    hammer::ch('x'),
+                    hammer::ch('y')
+                ),
+                ruleC
+            ),
+            sub { bless shift, 'flail::B' }
+        )
+    }
+
+and this doesn't even handle whitespace yet!
+
+you get a tree, but it's not annotated by default, so you have to do it manually
+
+order of alternatives matters
+
+this does not work
+
+    hammer::choice(
+        hammer::epsilon_p,
+        hammer::sequence(
+            hammer::ch('x'),
+            hammer::ch('z'),
+        ),
+    )
+
+this works
+
+    hammer::choice(
+        hammer::sequence(
+            hammer::ch('x'),
+            hammer::ch('z'),
+        ),
+        hammer::epsilon_p,
+    )
+
+referring to the same rule within itself is super tedious
+
+    sub ruleC {
+        state $ruleC = hammer::indirect;
+        hammer::bind_indirect(
+            $ruleC,
+            hammer::choice(
+                hammer::sequence(
+                    $ruleC,
+                    hammer::ch('w')
+                ),
+                hammer::ch('v')
+            )
+        );
+        return $ruleC;
+    }
+
+output
+
+    bless([
+        bless(['x', 'z'], 'flail::A'),
+        'x', 'y'], 'flail::B'
+    )
+
+    bless([
+        [
+            [
+                [
+                    [
+                        [
+                            'v',
+                            'w'
+                        ],
+                        'w'
+                     ],
+                     'w'
+                ],
+                'w'
+            ],
+            'w'
+        ],
+        'w'
+    ], 'flail::B')
+
+* error message is: "Parse failure"
+* if the parse fails, you don't know why
+* debugging is impossible
+
+.
+
+----
+
+Marpa
+=====
+
+a little bit of ceremony
+
+    use 5.024;
+    use strictures;
+    use Data::Dumper qw(Dumper);
+    use Marpa::R2 qw();
+
+    my $grammar = Marpa::R2::Scanless::G->new({
+        bless_package => 'flail',
+        source        => \<<'',
+    :default ::= action => [values] bless => ::lhs
+    lexeme default = action => [ start, length, value ] bless => ::name latm => 1
+    :discard ~ whitespace
+    whitespace ~ [\s]+
+    :start ::= B
+    B ::= A 'x' 'y' | C
+    A ::= epsilon | 'x' 'z'
+    C ::= C 'w' | 'v'
+    epsilon ::=
+
+    });
+    # say $grammar->show_rules;
+
+    for my $input ('x z x y', 'v w w w w w w') {
+        my $r = Marpa::R2::Scanless::R->new({
+            grammar => $grammar,
+    #         trace_terminals => 1
+        });
+        $r->read(\$input);
+        say Dumper $r->value;
+    }
+
+just works, and it's easy to get an annotated tree
+
+    bless([
+        bless(['x', 'z'], 'flail::A'),
+        'x', 'y'
+    ], 'flail::B')
+
+    bless([
+        bless([
+            bless([
+                bless([
+                    bless([
+                        bless([
+                            bless([
+                                bless([
+                                    'v'
+                                ], 'flail::C'),
+                                'w'
+                            ], 'flail::C'),
+                            'w'
+                        ], 'flail::C'),
+                        'w'
+                    ], 'flail::C'),
+                    'w'
+                ], 'flail::C'),
+                'w'
+            ], 'flail::C'),
+            'w'
+        ], 'flail::C')
+    ], 'flail::B')
+
+error message is decent:
+
+        Error in SLIF parse: No lexeme found at line 1, column 5
+        * String before error: x z\s
+        * The error was at line 1, column 5, and at character 0x0069 'i', ...
+        * here: invalid
+        Marpa::R2 exception at flail.pl line 24.
+
+* debugging is aided by enabling trace mode
+* only negative thing: some configuration is part of the grammar, and some is in Perl code
+
+----
+
+Pegex
+=====
+
+* documentation is a bit on the sparse side, but enough to get started
+* WS by inserting special short-cut tokens into the grammar
+
+        use 5.024;
+        use Data::Dumper qw(Dumper);
+        use Pegex::Parser qw();
+        use Pegex::Grammar qw();
+        use Pegex::Tree::Wrap qw();
+
+        my $grammar = Pegex::Grammar->new(text => <<'');
+        B: A 'x' 'y' | C
+        A: '' | 'x' 'z'
+        C: C 'w' | 'v'
+
+        for my $input ('xzxy', 'vwwwwww') {
+            my $parser = Pegex::Parser->new(
+                grammar => $grammar,
+                receiver => Pegex::Tree::Wrap->new,
+                debug => 1,
+                recursion_limit => 100,
+            );
+            eval {
+                say Dumper $parser->parse($input);
+            } or say $@;
+        }
+
+* making a tree is supposed to work by subclassing the Tree class
+* but I couldn't make it work, the `gotrule` method just does not receive any data
+* parsing doesn't work, will error after recursion limit is reached
+
+        try_B                          >vwwwwww<
+         try_A                          >vwwwwww<
+         got_A
+         try_C                          >vwwwwww<
+          try_C                          >vwwwwww<
+           try_C                          >vwwwwww<
+            try_C                          >vwwwwww<
+             try_C                          >vwwwwww<
+              try_C                          >vwwwwww<
+               try_C                          >vwwwwww<
+                try_C                          >vwwwwww<
+                 try_C                          >vwwwwww<
+                  try_C                          >vwwwwww<
+                   try_C                          >vwwwwww<
+                    try_C                          >vwwwwww<
+                     try_C                          >vwwwwww<
+                      try_C                          >vwwwwww<
+                       try_C                          >vwwwwww<
+                        try_C                          >vwwwwww<
+                         try_C                          >vwwwwww<
+                          try_C                          >vwwwwww<
+                           try_C                          >vwwwwww<
+                            try_C                          >vwwwwww<
+                             try_C                          >vwwwwww<
+                              try_C                          >vwwwwww<
+                               try_C                          >vwwwwww<
+                                try_C                          >vwwwwww<
+                                 try_C                          >vwwwwww<
+                                  try_C                          >vwwwwww<
+                                   try_C                          >vwwwwww<
+                                    try_C                          >vwwwwww<
+                                     try_C                          >vwwwwww<
+                                      try_C                          >vwwwwww<
+                                       try_C                          >vwwwwww<
+                                        try_C                          >vwwwwww<
+                                         try_C                          >vwwwwww<
+        Deep recursion (100 levels) on Pegex::Parser::match_next
+
+error message:
+
+        Error parsing Pegex document:
+          msg:      Parse document failed for some reason
+          line:     1
+          column:   1
+          context:  invalid
+
+          position: 0 (0 pre-lookahead)
+         at flail.pl line 22.
+
+⚑
+
+----
+
+Perl6
+=====
+
+interface is exquisite
+
+    use v6;
+    grammar Flail {
+        rule TOP { <B> }
+        rule B { <A> 'x' 'y' | <C> }
+        rule A { '' | 'x' 'z' }
+        rule C { <C> 'w' | 'v' }
+    }
+    Flail.parse('x z x y').say;
+    Flail.parse('v w w w w w w').say;
+
+output
+
+    ｢x z x y｣
+     B => ｢x z x y｣
+      A => ｢x z ｣
+    ^C
+
+infinite loop, but no warning
+
+error message
+
+    Nil
+
+debugging not built-in, but you can install Grammar::Tracer
+
+----
+
+Regexp::Grammars
+================
+
+* lovely minimal interface
+* grammar distinguishes between rules and tokens like Perl6
+* IMO the best way to handle the WS problem
+
+        use 5.024;
+        use Data::Dumper qw(Dumper);
+        use Regexp::Grammars;
+
+        my $parser = qr{
+        # <logfile: - >
+        # <debug: run>
+            <B>
+            <rule: B> <A> x y | <C>
+            <rule: A> | x z
+            <rule: C> <C> w | v
+        }msx;
+
+        for my $input ('x z x y', 'v w w w w') {
+            if ($input =~ $parser) {
+                say Dumper \%/;
+            }
+        }
+
+output:
+
+    $VAR1 = {
+              'B' => {
+                       '' => 'x z x y',
+                       'A' => 'x z'
+                     },
+              '' => 'x z x y'
+            };
+
+    Infinite recursion in regex at flail.pl line 15.
+
+the cause of error (not the error message) is actually documented and tries to be helpful
+
+no error message when a parse fails
+
+debug mode is really nice, shows the backtracking with indentation
+
+      info | Processing the main regex before any rule definitions
+           |    |
+           |    |...Treating <debug: run> as:
+           |    |       \ Change run-time debugging mode to 'run'
+           |    |
+           |    |...Treating <B> as:
+           |    |      |  match the subrule <B> 
+           |    |       \ saving the match in $MATCH{'B'}
+           |    |
+           |     \___End of main regex
+           | 
+           | Defining a rule: <B>
+           |    |...Returns: a hash
+           |    |
+           |    |...Treating <A> as:
+           |    |      |  match the subrule <A> 
+           |    |       \ saving the match in $MATCH{'A'}
+           |    |
+           |    |...Treating 'x' as:
+           |    |       \ normal Perl regex syntax
+           |    |
+           |    |...Treating 'y' as:
+           |    |       \ normal Perl regex syntax
+           |    |
+           |    |...Treating '|' as:
+           |    |       \ normal Perl regex syntax
+           |    |
+           |    |...Treating <C> as:
+           |    |      |  match the subrule <C> 
+           |    |       \ saving the match in $MATCH{'C'}
+           |    |
+           |     \___End of rule definition
+           | 
+           | Defining a rule: <A>
+           |    |...Returns: a hash
+           |    |
+           |    |...Treating '|' as:
+           |    |       \ normal Perl regex syntax
+           |    |
+           |    |...Treating 'x' as:
+           |    |       \ normal Perl regex syntax
+           |    |
+           |    |...Treating 'z' as:
+           |    |       \ normal Perl regex syntax
+           |    |
+           |     \___End of rule definition
+           | 
+           | Defining a rule: <C>
+           |    |...Returns: a hash
+           |    |
+           |    |...Treating <C> as:
+           |    |      |  match the subrule <C> 
+           |    |       \ saving the match in $MATCH{'C'}
+           |    |
+           |    |...Treating 'w' as:
+           |    |       \ normal Perl regex syntax
+           |    |
+           |    |...Treating '|' as:
+           |    |       \ normal Perl regex syntax
+           |    |
+           |    |...Treating 'v' as:
+           |    |       \ normal Perl regex syntax
+           |    |
+           |     \___End of rule definition
+           | 
+    ======> Trying <grammar> from position 0
+    x z x y |...Trying <B>
+            |   |...Trying <A>
+            |   |    \_____<A> matched ''
+            |   |...Trying subpattern /x/
+     z x y  |   |    \_____subpattern /x/ matched 'x'
+    z x y   |   |...Trying subpattern /y/
+            |   |    \FAIL subpattern /y/
+            |   |...Trying subpattern /y/
+            |   |    \FAIL subpattern /y/
+     <~~~~~ |   |...Backtracking 1 char and trying new match
+     z x y  |   |...Trying subpattern /y/
+     <~~~~~ |   |   |...Backtracking 1 char and trying new match
+    x z x y |   |   |...Trying next alternative
+            |   |   |...Trying subpattern /x/
+     z x y  |   |   |    \_____subpattern /x/ matched 'x'
+    z x y   |   |   |...Trying subpattern /z/
+     x y    |   |   |    \_____subpattern /z/ matched 'z'
+            |   |    \FAIL subpattern /y/
+            |   |    \_____<A> matched 'x z'
+    x y     |   |...Trying subpattern /x/
+     y      |   |    \_____subpattern /x/ matched 'x'
+    y       |   |...Trying subpattern /y/
+    [eos]   |   |    \_____subpattern /y/ matched 'y'
+            |    \_____<B> matched 'x z x y'
+
+----
+
+summary
+=======
+
+            gen.    flail   WS      error   debug
+
+    antlr4  offl.   ✘       expl.   ✔       ?
+    eyapp   offl.   ✔       auto?   ✔       ✔
+    hammer  onl.    ✔⁻      ✘       ✘       ✘
+    marpa   onl.    ✔       expl.   ✔⁻      ✔
+    pegex   onl.    ✘       ✘       ✔⁻      ✔
+    perl6   onl.    ✘       ✔       ✘       ✔
+    R::G    onl.    ✘       ✔       ✘       ✔
+
+conclusions
+===========
+
+* users cannot make an informed decision what to use, except trial and error
+* I hope I could save time for some people
+
+* parsing libraries need to mention and explain the technology or algorithm they use
+* they also need torture tests with all kinds of perverse grammars and we need to see where they fail, then the documentation can be patched with the shortcomings.
+
+I see this problem chiefly as a documentation problem. Any volunteers? Not difficult, just time consuming.
+
+----
+
+award: overall winner: Marpa
+============================
+
+* seriously impressive technology, like being able to make up fake tokens so that a failed parse can continue
+* can consume any CFG, always has meaningful error messages, debugging is solid
+* fast, makes guarantees of its run-time behaviour
+
+this is my personal recommendation
+
+award: biggest disappointment: Perl6
+====================================
+
+* proportional to my high expectations
+* worst failure mode, just hangs
+* IRC reaction: nobody seemed particularly concerned
+* can't parse octets, only strings:
+
+        Cannot use a Buf as a string, but you called the Str method on it
+          in block <unit> at
+
+given that, "less than awesome" does not begin to describe
+
+in Perl5 the regex engine is replaceable, but in Perl6?
+
+consolation: <https://github.com/drforr/perl6-Marpa>
+
+currently not working, up for adoption
+
+----
+
+    __END__

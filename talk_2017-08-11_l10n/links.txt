@@ -1,0 +1,18 @@
+https://www.lokalized.com/
+http://l20n.org/
+http://www.grammaticalframework.org/
+http://l10ns.org/
+http://thottingal.in/projects/js/jquery.i18n/demo/
+https://github.com/wikimedia/jquery.i18n
+https://formatjs.io/guides/message-syntax/
+https://format-message.github.io/icu-message-format-for-translators/
+https://www.google.at/search?q=icu+message+format
+https://github.com/globalizejs/globalize/blob/master/doc/api/message/message-formatter.md
+https://messageformat.github.io/Jed/
+How does ngettext handle "Your query matched %g files in %g directories"?
+https://developer.mozilla.org/en-US/docs/Mozilla/Localization/Localization_content_best_practices
+xliff
+omega-trans
+leave $! alone
+Data::Localize
+Locale::TextDomain::OO

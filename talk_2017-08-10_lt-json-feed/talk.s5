@@ -1,0 +1,149 @@
+JSON Feed, or - how to not write a specification
+================================================
+
+Lars Dɪᴇᴄᴋᴏᴡ 迪拉斯
+
+<daxim@cpan.org>
+
+<http://vienna.pm.org/>
+
+<https://github.com/daxim>
+
+<https://www.google.com/profiles/108247278178090416113>
+
+----
+
+<https://jsonfeed.org/>
+
+* yet another Web feed format
+* without any prior expert review, and it shows
+* 14 major problems
+
+----
+
+1. Its reason for being
+=======================
+
+* goal: supplant XML-based formats
+* docs contrast against XML-based formats
+* completely unaware of JSON-based Activity Streams and Collection+JSON
+
+----
+
+2. It hijacks a generic content type
+====================================
+
+* `application/json` already for JSON proper
+* cannot programmatically decide between JSON or JSON Feed
+* leads to horrible hacks like content sniffing
+
+----
+
+3. Gratuitous incompatibility
+=============================
+
+* new words to express existing data types, e.g. `updated` → `date_modified`
+* sometimes the semantics are changed, e.g. Atom `title`
+* software integration much harder
+
+----
+
+4. Lack of discovery
+====================
+
+* not discoverable
+* home page of a blog etc. → web browser indication
+* in feed reader app → paste adress of homepage, figures out the exact feed URI
+
+----
+
+5. Insufficient i18n
+====================
+
+* cannot specify a language
+* text processing software must guess
+* examples: stripping stop words for full-text search, text-to-speech or hyphenation
+
+----
+
+6. Lack of modularity
+=====================
+
+* JSON feed vocabulary cannot be reused in other JSON documents
+
+----
+
+7. Lack of a schema
+===================
+
+* Atom comes with a Relax NG schema
+* JSON Feed comes with nothing
+
+----
+
+8. No Atompub equivalent
+========================
+
+* publishing protocol
+* all you can do is *read* e.g. your blog/forum/wiki page
+* but you cannot post to it
+
+----
+
+9. Wrong model for extensibility
+================================
+
+quote: "the extension name, must begin with an _ character"
+
+* this is a **namespace** problem
+* extension name mostly unregulated, free form string → can easily trample over each other
+* strings have no ownership
+* spec authors did not establish a registry
+* everyone else just uses URIs instead
+
+----
+
+10. Lack of threading
+=====================
+
+* feeds for comments on a forum or blog → nested replies
+
+----
+
+11. Insufficient support for licensing information
+==================================================
+
+* blog content → mark as distributable under Creative Commons
+* copyleft or free licenses content → special archives or search engines
+
+----
+
+12. Lack of deleted entry
+=========================
+
+* delete blog entry after publication
+* `deleted` entry element → tell client to invalidate its cached entry
+
+----
+
+13. Lack of version navigation and revision tracking
+====================================================
+
+* updated blog entry after publication
+* feed reader can notify the user
+* mark the entry as unread
+* show the differences between the newest version and the previous
+
+----
+
+14. they've been trolling you
+==============================
+
+quote: "if you’re trying to decide which format (of RSS, Atom, and JSON Feed) to use, and you can do only one, pick RSS — it’s time-tested, popular, and good."
+
+* authors have so little confidence in their brainchild → recommend the biggest flaming shipwreck of Web feed formats over it
+* reminder: Atom was created specifically because precisely nothing of RSS could be salvaged
+
+----
+
+    __END__

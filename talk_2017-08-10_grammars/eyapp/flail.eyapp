@@ -1,0 +1,15 @@
+%strict
+%tree
+
+%%
+start: B        { use DDS; shift; print Dump @_ };
+B:
+    A 'x' 'y'   { shift; bless \@_, 'flail::B1' } |
+    C           { shift; bless \@_, 'flail::B2' };
+A:
+    ''          { shift; bless \@_, 'flail::A1' } |
+    'x' 'z'     { shift; bless \@_, 'flail::A2' };
+C:
+    C 'w'       { shift; bless \@_, 'flail::C1' } |
+    'v'         { shift; bless \@_, 'flail::C2' };
+%%

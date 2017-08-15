@@ -1,0 +1,451 @@
+Is the application translation problem solved?
+==============================================
+
+Lars Dɪᴇᴄᴋᴏᴡ 迪拉斯
+
+<daxim@cpan.org>
+
+<http://vienna.pm.org/>
+
+<https://github.com/daxim>
+
+<https://www.google.com/profiles/108247278178090416113>
+
+----
+
+a module comparison
+===================
+
+* state of the art of software translation **with message catalogues**
+* (the probably biggest) subset of l10n
+
+meaning
+-------
+
+    say 'You have new messages.';
+                ↓
+    say loc('You have new messages.');
+
+criteria
+--------
+
+* Is it easy to get results quickly?
+* Does it work correctly? Is there support for named placeholders and grammatical features like numerus and genus?
+* Do I get an understanding of the translators' workflow from the documentation so that I can communicate it to the involved project people?
+* Thread-safety & is it usable in server applications?
+* Does a catalogue require post-processing?
+* How is caching and cache invalidation handled?
+* How is message extraction handled?
+
+my criteria are subjective, but hopefully useful for you, too
+
+----
+
+candidates
+----------
+
+* libintl-perl a.k.a. Locale::TextDomain
+* Locale-TextDomain-OO
+
+disqualified
+------------
+
+anything Maketext (of course)
+
+married to frameworks: Log::Report::Message, CatalystX-I18N
+
+wrappers: Data-Localize
+
+----
+
+libintl-perl a.k.a. Locale::TextDomain
+======================================
+
+* assumes that user lived through '90s & already knows the C counterparts `libintl` and command-line tools
+* for those who have not, just looks like a mess of bad design decisions
+    * ships whole character encoding library
+    * goes to great lengths seeding FUD about the UTF-8 flag
+    * returning text from library calls in **encoded** octets (most of the time), rest of the world operates on decoded text strings
+
+* all might've been good decisions in the 5.6 era, but no excuse for practices for the last 15 years
+
+* `libintl.h` typical gnarly C API, but no Perl sugar on top of it
+
+* apropos C API, L::T says "pure-perl" in the abstract, but if you run it normally, you get the XS version → if you want pure-perl, you have to tell explicitely
+
+.
+
+.
+
+----
+
+usage in a Web application
+------------------------
+
+* support for server applications is an after-thought
+* documentation never once mentions the word "thread", as in "thread-safety, lack thereof"
+
+`broken.psgi`
+
+    use 5.024;
+    use strictures;
+    use Locale::TextDomain qw(com.cantanea.simplecal), 'share/locale';
+    use Locale::Util qw(web_set_locale);
+    use Plack::Request qw();
+
+    my $app = sub {
+        my ($env) = @_;
+        my $req = Plack::Request->new($env);
+        web_set_locale $req->header('Accept-Language');
+        my $body = __('January');
+        sleep 1;
+        $body .= __('February');
+        return [200, [], [$body]];
+    }
+
+`test-client.pl`
+
+    use 5.024;
+    use strictures;
+    use Time::HiRes qw(sleep);
+
+    my @lang = qw(ar nl);
+    for (1..100) {
+        sleep rand;
+        my $lang = $lang[rand @lang];
+        system "http -b :5000 Accept-Language:$lang &";
+    }
+
+output
+
+    januarifebruari
+
+    januarifebruari
+
+    januari������
+
+    �����������
+
+    januari������
+
+    januari������
+
+    januarifebruari
+
+    �����februari
+
+    �����februari
+
+    januarifebruari
+
+    januarifebruari
+
+* to add insult to injury, you get back the Arabic in ISO-8859-6
+
+.
+
+----
+
+if you search for "server" in the documentation, you will find
+
+    Locale::gettext_dumb - Locale unaware Implementation of Uniforum Message Translation
+
+module documentation:
+
+* "IMPORTANT! This module is experimental. It may not work as described!"
+* "you will soon reach limits with this approach."
+* "Normally you should not use this module!"
+
+does this inspire confidence in you?
+
+----
+
+* the only thing that actually works for server applications
+* cannot use the example code in the documentation, though
+* instead you have to change it like this
+
+         use 5.024;
+         use strictures;
+         use Locale::TextDomain qw(com.cantanea.simplecal), 'share/locale';
+        -use Locale::Util qw(web_set_locale);
+        +use Locale::Util qw(parse_http_accept_language);
+         use Plack::Request qw();
+         
+        +use Locale::Messages qw();
+        +Locale::Messages::select_package('gettext_dumb');
+        +
+         my $app = sub {
+             my ($env) = @_;
+             my $req = Plack::Request->new($env);
+        -    web_set_locale $req->header('Accept-Language');
+        +    $ENV{LANG} = (parse_http_accept_language $req->header('Accept-Language'))[0];
+             my $body = __('January');
+             sleep 1;
+             $body .= __('February');
+             return [200, [], [$body]];
+         }
+
+output
+
+    ينايرفبراير
+
+    januarifebruari
+
+    januarifebruari
+
+    januarifebruari
+
+    ينايرفبراير
+
+    januarifebruari
+
+    ينايرفبراير
+
+    ينايرفبراير
+
+    januarifebruari
+
+    ينايرفبراير
+
+----
+
+* can't use `web_set_locale` anymore
+* calls `setlocale` under the hood
+* but `gettext_dumb` does not care about that anymore
+
+        (parse_http_accept_language $req->header('Accept-Language'))[0]
+
+* so you have to parse the `Accept` header manually
+* pick the language with the highest ranking
+
+        $ENV{LANG} = (parse_http_accept_language………
+
+* surprisingly, writing into the environment *is* thread-safe! why? no idea.
+
+----
+
+criteria
+--------
+
+Is it easy to get results quickly?
+
+* no, design and documentation is sometimes user hostile and misleading
+* it's an ordeal to get it to work at all with a simple server application
+* I only was successful because I'm a seasoned programmer
+* a newcomer would have likely given up
+
+Does it work correctly? Is there support for named placeholders and grammatical features like numerus and genus?
+
+* works correctly and well once you've circumvented the cliffs
+* ✔ named placeholders
+* ✔ numerus
+* ✘ genus
+
+Do I get an understanding of the translators' workflow from the documentation so that I can communicate it to the involved project people?
+
+* yes, from the `example` directory
+* it's just `gettext`, so Wikipedia page or implementations in other programming languages help
+
+Thread-safety & is it usable in server applications?
+
+* yes, once you know the trick
+
+Does a catalogue require post-processing?
+
+* yes, `mo` compilation step is required
+
+How is caching and cache invalidation handled?
+
+* internal catalogue created at BEGIN time
+* cannot invalidate except by restart
+
+How is message extraction handled?
+
+* libintl-perl uses the `xgettext` command-line tool from the system `gettext` package, but `xgettext -L perl` does not work
+* instead you have to tell it all its keywords manually
+* not properly documented, only `README` file mentions an `example` directory
+* which does have a `Makefile` with the right incantation
+
+        xgettext --keyword=$__ --keyword=__ --keyword=__x \
+        --keyword=__n:1,2 --keyword=__nx:1,2 --keyword=__xn:1,2 \
+        --keyword=__p:1c,2 --keyword=__np:1c,2,3 \
+        --keyword=__npx:1c,2,3 --keyword=N__ --keyword=N__n:1,2 \
+        --keyword=N__p:1c,2 --keyword=N__np:1c,2,3 --keyword=%__ \
+        ………
+
+----
+
+Locale::TextDomain::OO
+======================
+
+* documentation exists to a good amount, but there's
+    * no runnable synopsis of a whole process
+    * no tutorial
+* architectural overview diagram, but have to figure out by yourself what's important and how things relate to each other
+* not easy to get started, but tests and examples help very much
+
+* sometimes the documentation is insufficient, e.g. calling the constructor returns an instance of `Locale::TextDomain::OO::Translator`
+* but if you look the module up, it's only boilerplate
+
+* the functional interface is super weird
+* it requires you to assign to a global variable that has been exported
+
+.
+
+    use 5.024;
+    use strictures;
+    use Encode qw(encode);
+    use Locale::TextDomain::OO qw();
+    use Locale::TextDomain::OO::Lexicon::File::PO qw();
+    use Locale::TextDomain::OO::FunctionalInterface qw($loc_ref __ __nx);
+    use Plack::Request qw();
+
+    my $app = sub {
+        my ($env) = @_;
+        my $req = Plack::Request->new($env);
+
+        $$loc_ref = Locale::TextDomain::OO->new(
+            language => $req->header('Accept-Language') // 'en',
+            domain   => 'com.cantanea.simplecal',
+            category => 'LC_MESSAGES',
+            plugins  => [qw(Expand::Gettext)],
+        );
+        Locale::TextDomain::OO::Lexicon::File::PO->new->lexicon_ref({
+            data => ['*:LC_MESSAGES:com.cantanea.simplecal' => '*/LC_MESSAGES/com.cantanea.simplecal.po',],
+            decode => 1,
+            search_dirs => ['./share/locale'],
+        });
+
+        my $body = __('January');
+        sleep 1;
+        $body .= __('February');
+        return [200, [], [encode 'UTF-8', $body]];
+    }
+
+output
+
+    januarifebruari
+
+    ينايرفبراير
+
+    ينايرفبراير
+
+    ينايرفبراير
+
+    januarifebruari
+
+    ينايرفبراير
+
+    januarifebruari
+
+    ينايرفبراير
+
+    ينايرفبراير
+
+    januarifebruari
+
+    januarifebruari
+
+    ينايرفبراير
+
+    ينايرفبراير
+
+    januarifebruari
+
+----
+
+criteria
+--------
+
+Is it easy to get results quickly?
+
+* no, you have to take time to experiment the first time
+
+Does it work correctly? Is there support for named placeholders and grammatical features like numerus and genus?
+
+* works fine
+* ✔⁺ named placeholders, customisable formatters
+* ✔ numerus
+* ✘ genus
+
+Do I get an understanding of the translators' workflow from the documentation so that I can communicate it to the involved project people?
+
+* nope
+
+Thread-safety & is it usable in server applications?
+
+* yes, no weirdness
+
+Does a catalogue require post-processing?
+
+* no
+
+How is caching and cache invalidation handled?
+
+* internal catalogue created at run-time
+* cannot invalidate except by restart
+
+How is message extraction handled?
+
+* install different dist Locale-TextDomain-OO-Extract
+* pick a type of extractor, e.g. TT for Template Toolkit
+* no command-line tool, just verbose OO code
+
+.
+
+    use Locale::TextDomain::OO::Extract::TT;
+    use Path::Tiny qw(path);
+     
+    my $extractor = Locale::TextDomain::OO::Extract::TT->new;
+    for ( @files ) {
+        $extractor->clear;
+        $extractor->filename($_);
+        $extractor->content_ref( \( path($_)->slurp_utf8 ) );
+        $exttactor->category('LC_Messages'); # set defaults or q{} is used
+        $extractor->domain('default');       # set defaults or q{} is used
+        $extractor->extract;
+    }
+    ... = $extractor->lexicon_ref;
+
+* problem: initial extraction cannot write to PO file, lacks header
+* workaround: bootstrap with `gettext` tools
+
+.
+
+----
+
+summary
+=======
+
+                        L::T    L::T::OO
+    quick results       ok      ✘
+    works correctly     ✔       ✔
+    grammatical         ✔,✔,✘   ✔⁺,✔,✘
+    trans. workflow     ✔       ✘
+    thread-safe         ✔       ✔
+    require postproc    yes     no
+    caching             BEGIN   run-time
+    extraction          ✔       difficult
+
+verdict: both win
+
+----
+
+Is the application translation problem solved?
+==============================================
+
+mostly yes, stick to the solutions I presented
+
+you will only encounter trouble with:
+
+* multiplural: "Selected 5 items from 42 results."
+* genus: "**Harry** changed **his** profile picture."
+ "**Meera** changed **her** profile picture."
+
+requires extending the underlying format and tooling
+
+topic for another time
+
+----
+
+    __END__

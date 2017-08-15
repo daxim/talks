@@ -1,0 +1,9 @@
+%strict
+%tree
+
+%%
+start: B;
+B: A 'x' 'y' | C;
+A: '' | 'x' 'z';
+C: C 'w' | 'v';
+%%
