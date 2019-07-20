@@ -1,0 +1,30 @@
+    A ⩴ ('a' ⋁ 'aa') 'a'
+    # aa
+    # aaa
+
+    A ⩴ ('aa' ⋁ 'a') 'a'
+    # aa
+    # aaa
+
+    A ⩴ 'a' A 'a' ⋁ 'aa'
+    # aa
+    # aaaa
+    # aaaaaa
+    # aaaaaaaa
+    # aaaaaaaaaa
+    # etc.
+
+    grammar { token TOP { [('a') || ('aa')] ('a') } }.parse('aa') # ok
+    grammar { token TOP { [('a') || ('aa')] ('a') } }.parse('aaa') # nok
+
+    grammar { token TOP { [('aa') || ('a')] ('a') } }.parse('aa') # nok
+    grammar { token TOP { [('aa') || ('a')] ('a') } }.parse('aaa') # ok
+
+    grammar { token TOP { ('a') <TOP> ('a') || ('aa') } }.parse('aa') # ok
+    grammar { token TOP { ('a') <TOP> ('a') || ('aa') } }.parse('aaaa') # ok
+    grammar { token TOP { ('a') <TOP> ('a') || ('aa') } }.parse('aaaaaa') # nok
+    grammar { token TOP { ('a') <TOP> ('a') || ('aa') } }.parse('aaaaaaaa') # ok
+    grammar { token TOP { ('a') <TOP> ('a') || ('aa') } }.parse('aaaaaaaaaa') # nok
+    grammar { token TOP { ('a') <TOP> ('a') || ('aa') } }.parse('aaaaaaaaaaaa') # nok
+    grammar { token TOP { ('a') <TOP> ('a') || ('aa') } }.parse('aaaaaaaaaaaaaa') # nok
+    grammar { token TOP { ('a') <TOP> ('a') || ('aa') } }.parse('aaaaaaaaaaaaaaaa') # ok

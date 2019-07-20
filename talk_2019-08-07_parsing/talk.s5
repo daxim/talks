@@ -1,0 +1,345 @@
+parsing confidently
+===================
+
+Lars Dɪᴇᴄᴋᴏᴡ 迪拉斯
+
+<daxim@cpan.org> │ <http://vienna.pm.org/> │ <https://github.com/daxim>
+
+----
+
+table of contents
+=================
+
+* abstract
+* target audience
+* definition of terms
+* main course
+    * part 1
+    * part 2
+    * part 3
+* Q&A
+
+----
+
+abstract
+========
+
+This topic occupies me since 2014 when I was programming my first compiler.
+As I found out in the past years, many grammar parsers are unsuitable for the
+general case because they cannot deal with certain edge cases that can occur
+quite often.¹ Since then I dove deeply into the topic and read 25 scientific
+papers and had to conclude that the situation is worse than assumed earlier.
+I prospect how we can get the problems that not widely known outside academic
+circles under control and do it better.
+
+¹ <http://act.perlconference.org/tpc-2017-amsterdam/talk/7092>
+
+----
+
+target audience
+===============
+
+It is registered as "familiar with subject" on the conference Web site, meaning
+I assume that you all have already used a parser and skip the basics.
+
+1. In case you think during my talk "I already knew that (e.g. through my
+university studies)", mind that there are enough people who hear about it for
+the first time. A huge amount of programmers is self-taught, so theoretical
+knowledge gaps happen easily. I am one of them.
+
+2. You must concur with me in the argument:
+
+* If you have the choice between several JSON libraries, those which make
+obvious mistakes are disqualified for a start.
+* This proposition applies to similar domains in an analogue fashion.
+
+If you do not concur, then you will find large part of the argumentation weak.
+
+![example](https://i.imgur.com/m8r8YOY.png)
+
+----
+
+definition of terms
+===================
+
+1. The word "generally" as I use it has a precise meaning. The meaning is
+opposed to the colloquial use. When I say e.g. "generally unusable", this does
+not mean "completely unusable", but "sometimes unusable, but not in all cases".
+
+2. abbreviation P6G = Perl 6 Grammar
+
+3. Grammar parsers are parsers that allow as input a declarative grammar
+definition. This could look like (or similar):
+
+    EXPR ⩴ EXPR 'mult' EXPR
+    EXPR ⩴ TERM
+    TERM ⩴ TERM 'add' TERM
+    TERM ⩴ FACTOR
+    FACTOR ⩴ 'num'
+    FACTOR ⩴ 'lpar' EXPR 'rpar'
+    FACTOR ⩴ 'star' EXPR
+
+In contrast:
+
+* hand-written parsers
+
+* parser combinators (e.g. Hammer, HOP::Parser, Parser::Combinator,
+Haskell Parsec family and many more)
+
+Example:
+
+    hammer::sequence(
+        hammer::ch('a'),
+        hammer::choice(
+            hammer::sequence(
+                hammer::ch('+'),
+                hammer::not(
+                    hammer::ch('+')
+                )
+            ),
+            hammer::token('++')
+        ),
+        hammer::ch('b')
+    );
+
+I had to leave them out because of time limitations.
+
+----
+
+part 1: what is unusable exactly?
+=================================
+
+1.1
+Grammar parsers have a documentation problem. Very often, they do not tell the
+programmer who wants to use such a library which type of parser or algorithm
+the library uses under the hood, or at the very least mention the limitations.²
+
+² There is at least one grammar parser documentation that outright lies to the
+programmer.
+
+1.2
+If the programmer wants to determine whether the library is suitable for his
+purposes, instead of deciding up-front he has no choice but to try out the
+software. Multiply this by every programmer who tries out the software. This is
+a colossal waste of time.
+
+1.3
+There is another problem. Sometimes, the programmer not only parses input under
+his control, but passes the parser off to an end user. The end user supplies
+input unforeseen by the programmer, and the parser breaks. Sometimes, it turns
+out the grammar was not quite correct, and the programmer can amend the grammar.
+However sometimes, the grammar already was correct, and the flaw is inherent to
+the parser's algorithm, but the flaw exhibits only under certain input, and so
+there is nothing the programmer can do to fix it except switch over to a
+different parser that does not have the algorithmic flaw. Again this is a waste
+of time.
+
+1.4
+A programmer should be able to make an informed decision which grammar parser
+is good to use, but the information is incomplete. The goal of the project 
+[grammar-shootout](https://github.com/daxim/grammar-shootout) is to make up for
+the short-comings in the grammar parser documentations in order to save the
+interested programmer some time. This is achieved not by amending the various
+documentations, but by torturing parsers with all kinds of grammars and a
+multitude of valid inputs and comparing the results.
+
+1.5
+A programmer can then easily pick a grammar parser that passes the tests
+flawlessly. He can be much more confident that the parser will not break later.³
+
+³ In fact, there are grammar parsers whose algorithm is proven to accept any
+CFG, that is to say the grammar parser is free of algorithmic limitations. It is
+very desirable to know which grammar parsers are in this category; if one has
+the choice to pick a grammar parser for a new project, why would one ever pick a
+flawed one?
+
+1.6
+For already existing software that contains a parser, the test results show
+scenarios where a grammar parser might break, and the programmer can be
+proactive about the problem without urgency, instead of being confronted out of
+the blue by a bug report from an end user.
+
+1.7
+The documentation might mention the limitations in an abstract way that would be
+difficult to understand for some programmers, the comparison shows problems in
+the concrete which aids to understand them more easily.
+
+1.8
+And lastly, this comparison also functions as a survey of the various APIs of
+the grammar parsers. By inspecting the generated code, a programmer can get feel
+how much effort it is to put a grammar to use with a certain grammar parser. My
+personal opinion is that software should reflect the motto: easy things easy,
+hard things possible. It should be straight-forward to get going with simple
+parsing tasks, yet the software should be powerful enough to solve the most
+difficult parsing tasks. Grammar parsers that have unwieldy APIs for no good
+reason or needlessly expose complexity to the programmer score badly in my mind.
+
+----
+
+→ comparison.html
+
+----
+
+One can see that P6G score badly.
+
+----
+
+part 2: problems with P6G and similar
+=====================================
+
+2.1
+P6G can do many things, but not particularly well.
+
+What does that mean? I have picked representative features that one can find
+only rarely in other grammar parsers or not at all (there are Kleene plus and
+star at the most):
+
+    % %% ~ assertions
+
+2.2
+Some problems I am addressing are due to the algorithm, some are specific to
+the implementation.
+
+2.3
+Anonymous terminals do not automatically become part of the tree.
+
+    grammar {
+        rule  sum   { <digit> <[ + \- ]> <digit> };
+        token digit { \d };
+    }.parse('3+4', rule => 'sum')
+
+2.4
+Left-recursive rules create an endless loop. The bug exists since beginning,
+is reported since two years on RT, but has not been adressed yet.
+<https://rt.perl.org/Ticket/Display.html?id=132004>
+
+2.5
+I also wanted to know what the parser is under the hood or its limitations.
+That is nowhere in the documentation. After two years of silence on RT no one
+could tell me. Moritz even managed to write a 200 page book about the topic
+without saying what is the matter of cause.
+
+2.6
+It is not anticipated to influence the return value, one can only mangle it
+*after* the tree has been completely constructed. There *is* a magic method
+`MATCH` but it is not documented on purpose. Actions, whether intrinsic or
+in a class, do not help. Everything has to be done by means of the magic `$/`
+variable. The `return` statement is ignored. This is a daft design, other
+programming languages break their bones in order to inhibit assignments to
+global variables, but Perl 6 does not care two hoots about it.
+
+P6 implementers have a motto: we torture ourselves on behalf of the end user
+(so that his programming is comfortable). Commonly that is true, but in this
+part of the implementation they did not cover themselves in glory.
+
+2.7
+Ambiguous parses are forcibly resolved over the head of the programmer, and if
+that was not the desired return value or does not fit the desired semantics,
+then you are out of luck. The documentation names an incomplete convolute of
+rules which in turn point to document `S05` which says about itself that it
+might be out of date. In any case `S05` describes how to force a certain
+result, and if thte programmer does not like that, there is no way to influence
+it, and there is also no documentation how one might be able to achieve that.
+
+That makes the parser generally unusable for parsing natural languages. For
+example it is not possible to parse the following sentence with P6G.
+
+(→ amb.graphml)
+
+2.8
+Then there is the problem of not being able to confidently intuit, how much P6G
+consumes, or if at all. Three examples that look trivial, but are quite crafty.
+
+(→ 2.8)
+
+It is still reasonable if one sits alone and work on a P6G and develops it
+oneself step-by-step, and runs tests with each change as described in the
+textbook chapter 7.5 so that one can notice immediately if something breaks.
+This way one can keep track.
+
+But reality looks different. One gets code from someone else put in front of
+oneself and and the number of elements in a realistic P6G is orders of
+magnitude larger. One wants to change or expand it and then it explodes because
+one cannot recognise or comprehend what the parser is doing by merely looking.
+
+If you think this is not a likely scenario, then be reminded that this is an
+explicit feature in the design: the keyword `grammar` acts like the keyword
+`class`, that is to say it is anticipated that one derives from P6G by means
+of inheritance etc., and indeed one of the `S05` rules I mentioned earlier
+is subject how to deal with inherited methods.
+
+2.9
+One cannot parse `Blob`s. Laconically "NYI".
+
+2.10
+One cannot parse `Seq`s. Input must be first completely loaded into memory and
+ruins the laziness of one's program.
+
+2.11
+When push comes to shove, developers show the white feather. They are not
+confident in the software and do not use it themselves. Every interesting
+parsing problem in the interest sphere of Perl 6 uses ad-hoc parsers instead
+of P6G. The exemption is the module `URI`.
+
+2.12
+The situation is quite frustrating, especially owing to the silence on RT.
+It is not acceptable that interested programmers are losing time due to
+faulty software. Or imagine a newcomer watches Andrew's parsing video on
+Youtube and thinks, hey, cool programming language with an easy to use parser,
+let me try that; and then only after a few days it breaks. Now this is a shabby
+first impression one forgets never again. So it is overdue that someone sits
+down and writes a reasonable parser. Cannot be that difficult!
+
+----
+
+part 3
+======
+
+----
+
+So I did.
+
+----
+
+* Table of tests is green. (→ comparisonz.html)
+
+* All parts of the grammar definition become automatically part of the return
+  value.
+
+* Processes all grammar definitions without problem, left-recursive, right-
+  recursive, does not matter.
+
+* Processes parsing of natural language without problem.
+
+* If there are several possible results, one gets all of them; not any one
+  arbitrarily.
+  
+* Any intuition about how an input is processed is adhered to. Stupid replace
+  and rewrite matches exactly the internal processing.
+
+* There are no global variables and neither there are assignments to global
+  variables.
+
+* The return value can be adjusted with a simple callback. `t/output-values.t`
+
+* Processes infinitely large inputs. `t/inf.t`
+
+* Processes binary input. `t/binary.t`
+
+* There is no subterfuge through backtracking.
+
+----
+
+* The software is not production ready, I invite you to help with it. There are
+  still lots of things to do. The most difficult part is already done.
+
+* Source code is on Github.
+
+----
+
+    __END__
+
+Q&A
+===
+
+your questions and comments

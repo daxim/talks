@@ -1,0 +1,10 @@
+2019-07-20
+
+I expressed a supposition that the reason for that no one could tell me the
+type or limitations of the P6G grammar parser might be due to a bus number of 1.
+This turned out to be false and I removed this part. Thanks to Liz for the
+correction.
+
+I thought I would need an implementation of graph algorithms (like the Perl 5
+`Graph` module) in order to fix some bugs. That turned out to not be necessary.
+I removed that part.
