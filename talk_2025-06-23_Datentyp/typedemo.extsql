@@ -1,0 +1,11 @@
+create type "Zahlart" as union (
+    "Bar" unit as "Bargeld",
+    "Online" record (
+        "Anweiser" text check (value ~ '^[\w+-]+(?:\.[\w+-]+)*@[\da-z]+(?:[.-][\da-z]+)*\.[a-z]{2,}$') as "RFC5322AddrSpec"
+    ) as "Onlinezahlung",
+    "Karte" record (
+        "Ausstellername" enum('M******', 'V***') as "Aussteller",
+        "PAN" text check (10 <= length(value) and length(value) <= 19) as "ISO7812",
+        "Inhabername" text check (length(value) > 0) as "Inhaber"
+    ) as "Zahlungskarte"
+);
